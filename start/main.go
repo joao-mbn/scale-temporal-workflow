@@ -2,46 +2,39 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 
+	"github.com/pborman/uuid"
 	app "github.com/scale-temporal-workflow"
 
 	"go.temporal.io/sdk/client"
 )
 
 func main() {
+	// The client is a heavyweight object that should be created once per process.
+	c, err := client.Dial(client.Options{
+		HostPort: client.DefaultHostPort,
+	})
+	if err != nil {
+		log.Fatalln("Unable to create client", err)
+	}
+	defer c.Close()
 
-    // Create the client object just once per process
-    c, err := client.Dial(client.Options{})
-    if err != nil {
-        log.Fatalln("unable to create Temporal client", err)
-    }
-    defer c.Close()
-
-    options := client.StartWorkflowOptions{
-        ID:        "greeting-workflow",
-        TaskQueue: app.ScaleTemporalWorkflowTaskQueue,
-    }
-
-    // Start the Workflow
-    name := "World"
-    we, err := c.ExecuteWorkflow(context.Background(), options, app.GreetingWorkflow, name)
-    if err != nil {
-        log.Fatalln("unable to complete Workflow", err)
-    }
-
-    // Get the results
-    var greeting string
-    err = we.Get(context.Background(), &greeting)
-    if err != nil {
-        log.Fatalln("unable to get Workflow result", err)
-    }
-
-    printResults(greeting, we.GetID(), we.GetRunID())
+	executeCronWorkflow(c, app.ProducerWorkflow, "* * * * *")
+	executeCronWorkflow(c, app.ConsumerWorkflow, "*/2 * * * *")
 }
 
-func printResults(greeting string, workflowID, runID string) {
-    fmt.Printf("\nWorkflowID: %s RunID: %s\n", workflowID, runID)
-    fmt.Printf("\n%s\n\n", greeting)
+func executeCronWorkflow(c client.Client, workflow interface {}, cronSchedule string ) {
+	workflowId := "cron_" + uuid.New()
+	producerWorkflowOptions := client.StartWorkflowOptions{
+		ID:           workflowId,
+		TaskQueue:    app.ScaleTemporalWorkflowTaskQueue,
+		CronSchedule: cronSchedule,
+	}
+
+	we, err := c.ExecuteWorkflow(context.Background(), producerWorkflowOptions, workflow)
+	if err != nil {
+		log.Fatalln("Unable to execute workflow", err)
+	}
+	log.Println("Started workflow", "WorkflowID", we.GetID(), "RunID", we.GetRunID())
 }

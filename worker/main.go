@@ -19,8 +19,14 @@ func main() {
 
     // This worker hosts both Workflow and Activity functions
     w := worker.New(c, app.ScaleTemporalWorkflowTaskQueue, worker.Options{})
-    w.RegisterWorkflow(app.GreetingWorkflow)
-    w.RegisterActivity(app.ComposeGreeting)
+
+    w.RegisterWorkflow(app.ProducerWorkflow)
+		w.RegisterWorkflow(app.ProducerChildWorkflow)
+    w.RegisterActivity(app.ProduceMessageActivity)
+
+		w.RegisterWorkflow(app.ConsumerWorkflow)
+		w.RegisterWorkflow(app.ConsumerChildWorkflow)
+		w.RegisterActivity(app.ConsumeMessageActivity)
 
     // Start listening to the Task Queue
     err = w.Run(worker.InterruptCh())
