@@ -1,6 +1,10 @@
 # Scale Temporal Workflow
 
+A service that leverages Apache Kafka and Temporal to produce and consume messages. The service includes two Temporal tasks: one for producing messages, triggered every minute, and one for consuming messages, triggered every two minutes.
+
 ## Start Kafka Server
+
+[Kafka Quickstart](https://kafka.apache.org/quickstart)
 
 ~/path-to-kafka
 
@@ -20,20 +24,32 @@ bin/kafka-topics.sh --create --topic scale-temporal-workflow --bootstrap-server 
 
 ## Create Temporal Server
 
+[Set up Temporal locally](https://learn.temporal.io/getting_started/go/dev_environment/)
+
 ~/scale-temporal-workflow
 
 ```sh
 temporal server start-dev
 ```
 
-- Create Producer Workflow
-- Create Producer Child Workflows
-- Create Producer Activity
+## Create Worker
 
-- Create Consumer Workflow
-- Create Consumer Child Workflows
-- Create Consumer Activity
+~/scale-temporal-workflow
 
-- Link Parent Workflows to Worker
-- Start Workflows on start/main
-  - Start Consumer with one minute of delay
+```sh
+go run worker/main.go
+```
+
+## Execute Workflows
+
+~/scale-temporal-workflow
+
+```sh
+go run start/main.go
+```
+
+## TODO
+
+- Write tests for the workflows
+- Improve teardown of ConsumerActivity
+- Improve workflow cancellation method

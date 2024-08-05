@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"log"
 	"os"
 	"os/signal"
 	"time"
@@ -16,19 +15,35 @@ func ConsumerWorkflow(ctx workflow.Context) error {
 	workflow.GetLogger(ctx).Info("Cron workflow started.", "StartTime", workflow.Now(ctx))
 
 	cwo := workflow.ChildWorkflowOptions{
-		WorkflowID: "cron_child_workflow",
+		WorkflowExecutionTimeout: 100 * time.Second,
 	}
 
 	ctx = workflow.WithChildOptions(ctx, cwo)
 
-	for i := 0; i < 5; i++ {
-		var result interface{}
-		err := workflow.ExecuteChildWorkflow(ctx, ConsumerChildWorkflow).Get(ctx, &result)
+	futures := make([]workflow.Future, 200)
 
-		if err != nil {
-			workflow.GetLogger(ctx).Error("Parent execution received child execution failure.", "Error", err)
-			return err
-		}
+	for i, id := range futures {
+		futures[i] = workflow.ExecuteChildWorkflow(ctx, ConsumerChildWorkflow, id)
+	}
+
+	// Use a select statement to wait for all child workflows to complete or for the timeout
+	selector := workflow.NewSelector(ctx)
+	for _, future := range futures {
+		f := future
+		selector.AddFuture(f, func(f workflow.Future) {
+			var result interface{}
+			err := f.Get(ctx, &result)
+			if err != nil {
+				workflow.GetLogger(ctx).Error("Child workflow failed", "Error", err)
+			} else {
+				workflow.GetLogger(ctx).Info("Child workflow completed", "Result", result)
+			}
+		})
+	}
+
+	// Wait for either all child workflows to complete or the parent workflow timeout
+	for i := 0; i < len(futures); i++ {
+		selector.Select(ctx)
 	}
 
 	return nil
@@ -36,7 +51,7 @@ func ConsumerWorkflow(ctx workflow.Context) error {
 
 func ConsumerChildWorkflow(ctx workflow.Context) (*CronResult, error) {
 	ao := workflow.ActivityOptions{
-		StartToCloseTimeout: 10 * time.Second,
+		StartToCloseTimeout: 90 * time.Second,
 	}
 	ctx1 := workflow.WithActivityOptions(ctx, ao)
 
@@ -50,7 +65,7 @@ func ConsumerChildWorkflow(ctx workflow.Context) (*CronResult, error) {
 	}
 	thisRunTime := workflow.Now(ctx)
 
-	err := workflow.ExecuteActivity(ctx1, ProduceMessageActivity, lastRunTime, thisRunTime).Get(ctx, nil)
+	err := workflow.ExecuteActivity(ctx1, ConsumeMessageActivity, lastRunTime, thisRunTime).Get(ctx, nil)
 	if err != nil {
 		workflow.GetLogger(ctx).Error("Cron job failed.", "Error", err)
 		return nil, err
@@ -81,23 +96,27 @@ func ConsumeMessageActivity(ctx context.Context, lastRunTime, thisRunTime time.T
 	}
 	defer producer.Close()
 
-	// Trap SIGINT to trigger a shutdown.
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt)
 
+	timeoutChan := time.After(80 * time.Second)
 	consumed := 0
 	ConsumerLoop:
 	for {
 		select {
 		case msg := <-partitionConsumer.Messages():
-			log.Printf("Consumed message offset %d\n", msg.Offset)
+			activity.GetLogger(ctx).Info("Received message", "Key", string(msg.Key), "Value", string(msg.Value))
 			consumed++
 		case <-signals:
+			activity.GetLogger(ctx).Info("Interrupt Consumer Loop. Shutting down...")
+			break ConsumerLoop
+		case <-timeoutChan:
+			activity.GetLogger(ctx).Info("Consumer time limit reached. Shutting down...")
 			break ConsumerLoop
 		}
 	}
 
-	log.Printf("Consumed: %d\n", consumed)
+	activity.GetLogger(ctx).Info("Consumed", consumed)
 
 	return nil
 }

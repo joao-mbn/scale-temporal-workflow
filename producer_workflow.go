@@ -9,19 +9,14 @@ import (
 	"go.temporal.io/sdk/workflow"
 )
 
-
-
 func ProducerWorkflow(ctx workflow.Context) error {
-
 	workflow.GetLogger(ctx).Info("Cron workflow started.", "StartTime", workflow.Now(ctx))
 
-	cwo := workflow.ChildWorkflowOptions{
-		WorkflowID: "cron_child_workflow",
-	}
+	cwo := workflow.ChildWorkflowOptions{ }
 
 	ctx = workflow.WithChildOptions(ctx, cwo)
 
-	for i := 0; i < 5; i++ {
+	for i := 0; i < 200; i++ {
 		var result interface{}
 		err := workflow.ExecuteChildWorkflow(ctx, ProducerChildWorkflow).Get(ctx, &result)
 
