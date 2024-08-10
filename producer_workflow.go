@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/IBM/sarama"
-	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/workflow"
 )
 
@@ -16,15 +15,31 @@ func ProducerWorkflow(ctx workflow.Context) error {
 
 	ctx = workflow.WithChildOptions(ctx, cwo)
 
-	for i := 0; i < 200; i++ {
-		var result interface{}
-		err := workflow.ExecuteChildWorkflow(ctx, ProducerChildWorkflow).Get(ctx, &result)
+	futures := make([]workflow.Future, childWorkflowsCount)
 
-		if err != nil {
-			workflow.GetLogger(ctx).Error("Parent execution received child execution failure.", "Error", err)
-			return err
-		}
+	for i, id := range futures {
+		futures[i] = workflow.ExecuteChildWorkflow(ctx, ProducerChildWorkflow, id)
 	}
+
+	// Use a select statement to wait for all child workflows to complete or for the timeout
+	selector := workflow.NewSelector(ctx)
+	for _, future := range futures {
+		f := future
+		selector.AddFuture(f, func(f workflow.Future) {
+			var result interface{}
+			err := f.Get(ctx, &result)
+			if err != nil {
+				workflow.GetLogger(ctx).Error("Child workflow failed", "Error", err)
+			}
+		})
+	}
+
+	// Wait for either all child workflows to complete or the parent workflow timeout
+	for i := 0; i < len(futures); i++ {
+		selector.Select(ctx)
+	}
+
+	workflow.GetLogger(ctx).Info("Cron workflow finished.", "EndTime", workflow.Now(ctx))
 
 	return nil
 }
@@ -61,8 +76,6 @@ func ProduceMessageActivity(ctx context.Context, lastRunTime, thisRunTime time.T
 		return err
 	}
 	defer producer.Close()
-
-	activity.GetLogger(ctx).Info("Producer message activity running.", "lastRunTime_exclude", lastRunTime, "thisRunTime_include", thisRunTime)
 
 	message := "message: " + lastRunTime.String() + " thisRunTime_include " + thisRunTime.String()
 	msg := &sarama.ProducerMessage{

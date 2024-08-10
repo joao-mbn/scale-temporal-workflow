@@ -20,7 +20,7 @@ func ConsumerWorkflow(ctx workflow.Context) error {
 
 	ctx = workflow.WithChildOptions(ctx, cwo)
 
-	futures := make([]workflow.Future, 200)
+	futures := make([]workflow.Future, childWorkflowsCount)
 
 	for i, id := range futures {
 		futures[i] = workflow.ExecuteChildWorkflow(ctx, ConsumerChildWorkflow, id)

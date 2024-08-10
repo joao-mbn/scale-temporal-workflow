@@ -4,9 +4,9 @@ go 1.22.5
 
 require (
 	github.com/IBM/sarama v1.43.2
+	github.com/pborman/uuid v1.2.1
 	github.com/stretchr/testify v1.9.0
 	go.temporal.io/sdk v1.28.1
-	github.com/pborman/uuid v1.2.1
 )
 
 require (
