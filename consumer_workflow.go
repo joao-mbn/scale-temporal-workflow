@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/IBM/sarama"
-	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/workflow"
 )
 
@@ -53,30 +52,19 @@ func ConsumerChildWorkflow(ctx workflow.Context) (*CronResult, error) {
 	ao := workflow.ActivityOptions{
 		StartToCloseTimeout: 90 * time.Second,
 	}
-	ctx1 := workflow.WithActivityOptions(ctx, ao)
+	childCtx := workflow.WithActivityOptions(ctx, ao)
 
-	lastRunTime := time.Time{}
-
-	if workflow.HasLastCompletionResult(ctx) {
-		var lastResult CronResult
-		if err := workflow.GetLastCompletionResult(ctx, &lastResult); err == nil {
-			lastRunTime = lastResult.RunTime
-		}
-	}
-	thisRunTime := workflow.Now(ctx)
-
-	err := workflow.ExecuteActivity(ctx1, ConsumeMessageActivity, lastRunTime, thisRunTime).Get(ctx, nil)
+	err := workflow.ExecuteActivity(childCtx, ConsumeMessageActivity, 80 * time.Second).Get(ctx, nil)
 	if err != nil {
 		workflow.GetLogger(ctx).Error("Cron job failed.", "Error", err)
 		return nil, err
 	}
 
+	thisRunTime := workflow.Now(ctx)
 	return &CronResult{RunTime: thisRunTime}, nil
 }
 
-func ConsumeMessageActivity(ctx context.Context, lastRunTime, thisRunTime time.Time) error {
-	activity.GetLogger(ctx).Info("Consumer message activity running.", "lastRunTime_exclude", lastRunTime, "thisRunTime_include", thisRunTime)
-
+func ConsumeMessageActivity(ctx context.Context, duration time.Duration) ([]string, error) {
 	brokers := []string{broker}
 	consumer, err := sarama.NewConsumer(brokers, nil)
 	if err != nil {
@@ -90,34 +78,25 @@ func ConsumeMessageActivity(ctx context.Context, lastRunTime, thisRunTime time.T
 	}
 	defer partitionConsumer.Close()
 
-	producer, err := sarama.NewSyncProducer(brokers, nil)
-	if err != nil {
-		return err
-	}
-	defer producer.Close()
-
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt)
 
-	timeoutChan := time.After(80 * time.Second)
-	consumed := 0
+	timeoutChan := time.After(duration)
+
+	messageArray := make([]string, 0)
+
 	ConsumerLoop:
 	for {
 		select {
 		case msg := <-partitionConsumer.Messages():
-			activity.GetLogger(ctx).Info("Received message", "Key", string(msg.Key), "Value", string(msg.Value))
-			consumed++
+			messageArray = append(messageArray, string(msg.Value))
 		case <-signals:
-			activity.GetLogger(ctx).Info("Interrupt Consumer Loop. Shutting down...")
 			break ConsumerLoop
 		case <-timeoutChan:
-			activity.GetLogger(ctx).Info("Consumer time limit reached. Shutting down...")
 			break ConsumerLoop
 		}
 	}
 
-	activity.GetLogger(ctx).Info("Consumed", consumed)
-
-	return nil
+	return messageArray, nil
 }
 

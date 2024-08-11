@@ -48,19 +48,11 @@ func ProducerChildWorkflow(ctx workflow.Context) (*CronResult, error) {
 	ao := workflow.ActivityOptions{
 		StartToCloseTimeout: 10 * time.Second,
 	}
-	ctx1 := workflow.WithActivityOptions(ctx, ao)
+	childCtx := workflow.WithActivityOptions(ctx, ao)
 
-	lastRunTime := time.Time{}
-
-	if workflow.HasLastCompletionResult(ctx) {
-		var lastResult CronResult
-		if err := workflow.GetLastCompletionResult(ctx, &lastResult); err == nil {
-			lastRunTime = lastResult.RunTime
-		}
-	}
 	thisRunTime := workflow.Now(ctx)
 
-	err := workflow.ExecuteActivity(ctx1, ProduceMessageActivity, lastRunTime, thisRunTime).Get(ctx, nil)
+	err := workflow.ExecuteActivity(childCtx, ProduceMessageActivity, thisRunTime).Get(ctx, nil)
 	if err != nil {
 		workflow.GetLogger(ctx).Error("Cron job failed.", "Error", err)
 		return nil, err
@@ -69,7 +61,7 @@ func ProducerChildWorkflow(ctx workflow.Context) (*CronResult, error) {
 	return &CronResult{RunTime: thisRunTime}, nil
 }
 
-func ProduceMessageActivity(ctx context.Context, lastRunTime, thisRunTime time.Time) error {
+func ProduceMessageActivity(ctx context.Context, thisRunTime time.Time) error {
 	brokers := []string{broker}
 	producer, err := sarama.NewSyncProducer(brokers, nil)
 	if err != nil {
@@ -77,7 +69,7 @@ func ProduceMessageActivity(ctx context.Context, lastRunTime, thisRunTime time.T
 	}
 	defer producer.Close()
 
-	message := "message: " + lastRunTime.String() + " thisRunTime_include " + thisRunTime.String()
+	message := "message: produced message at" + thisRunTime.String()
 	msg := &sarama.ProducerMessage{
 		Topic: topic,
 		Value: sarama.StringEncoder(message),

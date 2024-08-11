@@ -48,7 +48,15 @@ go run worker/main.go
 go run start/main.go
 ```
 
-## Managing Tests
+## Tests
+
+### Run tests
+
+~/scale-temporal-workflow
+
+```sh
+go test
+```
 
 ### Purge Kafka Test Topics
 
@@ -58,17 +66,12 @@ go run start/main.go
 bin/kafka-topics.sh --delete --topic scale-temporal-workflow --bootstrap-server localhost:9092 --if-exists && bin/kafka-topics.sh --create --topic scale-temporal-workflow --bootstrap-server localhost:9092 --if-not-exists
 ```
 
+**The tests will already handle reseting the topic. You don't have to do this manually.**
+
 ### See existing messages on topic
 
 ```sh
 bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic scale-temporal-workflow --from-beginning
 ```
 
-## TODO
-
-- Write tests for the workflows
-
-### Postpone
-
-- Improve teardown of ConsumerActivity
-- Improve workflow cancellation method
+**Exiting the process will tell you how many messages you have consumed.**
